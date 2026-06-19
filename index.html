@@ -52,6 +52,30 @@ body {
 .card p   { color: var(--gray-600); font-size: 0.875rem; line-height: 1.6; margin-bottom: 28px; }
 .card p strong { color: var(--gray-900); }
 
+.tz-label-txt {
+    display: block;
+    text-align: left;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--gray-600);
+    margin-bottom: 6px;
+}
+
+.tz-select {
+    width: 100%;
+    padding: 11px 14px;
+    border: 2px solid var(--gray-200);
+    border-radius: 10px;
+    font-size: 0.9rem;
+    margin-bottom: 14px;
+    outline: none;
+    background: white;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    color: var(--gray-900);
+}
+.tz-select:focus { border-color: var(--blue); }
+
 .input {
     width: 100%;
     padding: 12px 16px;
@@ -328,6 +352,8 @@ body {
         </p>
         <input class="input" type="text" id="name-input"
                placeholder="Your name" maxlength="60" autocomplete="off" />
+        <span class="tz-label-txt">Your timezone</span>
+        <select class="tz-select" id="tz-select"></select>
         <button class="btn-primary" id="start-btn" disabled>
             Show availability grid →
         </button>
@@ -471,13 +497,13 @@ function makeSlots() {
 const TIME_SLOTS = makeSlots(); // ["1300","1315",…,"1745"]
 const sKey = (dayKey, t) => `${dayKey}_${t}`;
 
-/* Convert a UTC hour+minute on a specific date to the user's local time string */
+/* Convert a UTC hour+minute on a specific date to the selected timezone's time string */
 function toLocal(utcH, utcM, y, mo, d) {
     return new Date(Date.UTC(y, mo - 1, d, utcH, utcM))
-        .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+        .toLocaleTimeString([], { timeZone: selectedTz, hour: '2-digit', minute: '2-digit', hour12: false });
 }
 
-/* For the time-label column, use Nov 2 as reference (all dates share the same UTC offset) */
+/* For the time-label column, use Nov 2 as reference */
 function slotLabel(utcTimeStr) {
     return toLocal(parseInt(utcTimeStr.slice(0,2)), parseInt(utcTimeStr.slice(2)), 2025, 11, 2);
 }
@@ -500,14 +526,30 @@ function heatColor(ratio) {
 }
 
 /* ── STATE ── */
-let myName  = '';
-let mySlots = new Set();
-let allData = {};
-let dragging = false, dragOn = true;
+let myName    = '';
+let selectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone; // default to detected
+let mySlots   = new Set();
+let allData   = {};
+let dragging  = false, dragOn = true;
 
 /* ── NAME SCREEN ── */
 const nameInput = document.getElementById('name-input');
 const startBtn  = document.getElementById('start-btn');
+const tzSelect  = document.getElementById('tz-select');
+
+// Populate timezone dropdown
+const detectedTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+const savedTz    = localStorage.getItem('thesis_tz');
+const allTz      = Intl.supportedValuesOf ? Intl.supportedValuesOf('timeZone') : [detectedTz];
+allTz.forEach(tz => {
+    const opt = document.createElement('option');
+    opt.value = tz;
+    opt.textContent = tz.replace(/_/g, ' ');
+    tzSelect.appendChild(opt);
+});
+tzSelect.value = savedTz || detectedTz;
+selectedTz = tzSelect.value;
+tzSelect.addEventListener('change', () => { selectedTz = tzSelect.value; });
 
 const saved = localStorage.getItem('thesis_name');
 if (saved) { nameInput.value = saved; startBtn.disabled = false; }
@@ -518,7 +560,9 @@ nameInput.addEventListener('keydown', e  => { if (e.key === 'Enter' && !startBtn
 startBtn.addEventListener('click', () => {
     myName = nameInput.value.trim();
     if (!myName) return;
+    selectedTz = tzSelect.value;
     localStorage.setItem('thesis_name', myName);
+    localStorage.setItem('thesis_tz', selectedTz);
     initGrid();
 });
 
@@ -528,13 +572,8 @@ function initGrid() {
     document.getElementById('grid-screen').style.display = 'block';
     document.getElementById('display-name').textContent = myName;
 
-    // Show user's timezone
-    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const offsetMin = -new Date().getTimezoneOffset();
-    const offsetH   = Math.floor(Math.abs(offsetMin) / 60);
-    const offsetM   = Math.abs(offsetMin) % 60;
-    const offsetStr = `UTC${offsetMin >= 0 ? '+' : '-'}${String(offsetH).padStart(2,'0')}${offsetM ? ':' + String(offsetM).padStart(2,'0') : ''}`;
-    document.getElementById('tz-label').textContent = `${tz}, ${offsetStr}`;
+    // Show selected timezone
+    document.getElementById('tz-label').textContent = selectedTz.replace(/_/g, ' ');
 
     buildGrid();
     subscribeFirebase();
