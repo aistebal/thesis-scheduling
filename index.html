@@ -133,7 +133,7 @@ body {
     display: flex;
     flex-direction: column;
     padding-top: 52px;
-    min-width: 40px;
+    min-width: 50px;
     flex-shrink: 0;
 }
 .time-lbl {
@@ -277,10 +277,11 @@ body {
     pointer-events: none;
     z-index: 1000;
     display: none;
-    max-width: 220px;
+    max-width: 240px;
     box-shadow: 0 4px 14px rgba(0,0,0,0.22);
 }
 .tip strong { font-size: 0.8rem; display: block; margin-bottom: 2px; }
+.tip .cet-note { font-size: 0.7rem; opacity: 0.65; margin-top: 2px; }
 
 /* error screen */
 #err-screen {
@@ -310,9 +311,8 @@ body {
         <h2>⚙️ Firebase setup needed</h2>
         <p>
             This scheduling page needs Firebase configured before it can be shared.
-            Open <code>index.html</code> and follow the setup instructions at the top of the
-            <code>&lt;script&gt;</code> block — they explain how to create a free Firebase project
-            and paste in your credentials. Takes about 5 minutes.
+            Open <code>index.html</code> and follow the setup instructions in the
+            <code>&lt;script&gt;</code> block to add your Firebase credentials.
         </p>
     </div>
 </div>
@@ -322,7 +322,8 @@ body {
     <div class="card">
         <h1>📅 Thesis Defense — Find a Time</h1>
         <p>
-            Mark the times you're available.<br>
+            Mark the times you're available. Times will be shown
+            in <strong>your local timezone</strong>.<br><br>
             You must select <strong>at least one continuous 2-hour block</strong>.
         </p>
         <input class="input" type="text" id="name-input"
@@ -344,7 +345,8 @@ body {
                 <div class="sub">
                     Filling in as <strong id="display-name"></strong>
                     &nbsp;·&nbsp; Click or drag to select/deselect
-                    &nbsp;·&nbsp; Hover a cell for details
+                    &nbsp;·&nbsp; Times in your local timezone (<span id="tz-label"></span>)
+                    &nbsp;·&nbsp; Dates are in CET (Zurich)
                 </div>
             </div>
             <div class="legend">
@@ -402,26 +404,7 @@ body {
 
 <script>
 /* ================================================================
-   STEP 1 — FIREBASE CONFIG
-   ---------------------------------------------------------------
-   1. Go to https://console.firebase.google.com → "Add project"
-      (give it any name, click through the wizard)
-
-   2. On the project dashboard click the </> icon (web app),
-      register the app, then copy the firebaseConfig shown.
-
-   3. Go to Build → Realtime Database → "Create database"
-      Choose a region, then choose "Start in TEST MODE" → Enable.
-
-   4. Paste your config into the object below, replacing every
-      "YOUR_…" placeholder. The databaseURL line looks like:
-        US:  https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com
-        EU:  https://YOUR_PROJECT_ID-default-rtdb.europe-west1.firebasedatabase.app
-
-   5. Deploy: go to https://netlify.com → log in (free) →
-      drag this index.html file onto the Netlify dashboard.
-      You'll get a URL like https://amazing-moon-12345.netlify.app
-      → share that link!
+   FIREBASE CONFIG — your credentials are already filled in below
    ================================================================ */
 const FIREBASE_CONFIG = {
     apiKey:            "AIzaSyA6GU-diqg9MZEOkwVyB1Rzxa1qnQqR9WE",
@@ -434,60 +417,83 @@ const FIREBASE_CONFIG = {
 };
 
 /* ================================================================
-   STEP 2 — SCHEDULE  (edit dates/hours here if needed)
+   SCHEDULE — times are in CET (Zurich, UTC+1 in November).
+   The app automatically converts them to each visitor's local time.
    ================================================================ */
+const CET_OFFSET = 1;  // CET = UTC+1 in November (after DST ends)
+
 const SCHEDULE = [
-    { wd: "MON", date: "Nov 2",  key: "20251102", start: 14, end: 19 },
-    { wd: "TUE", date: "Nov 3",  key: "20251103", start: 16, end: 19 },
-    { wd: "MON", date: "Nov 9",  key: "20251109", start: 14, end: 19 },
-    { wd: "TUE", date: "Nov 10", key: "20251110", start: 14, end: 19 },
-    { wd: "THU", date: "Nov 12", key: "20251112", start: 14, end: 19 },
-    { wd: "MON", date: "Nov 16", key: "20251116", start: 14, end: 19 },
-    { wd: "TUE", date: "Nov 17", key: "20251117", start: 14, end: 19 },
+    { wd: "MON", date: "Nov 2",  key: "20251102", cetStart: 14, cetEnd: 19, y: 2025, mo: 11, d: 2  },
+    { wd: "TUE", date: "Nov 3",  key: "20251103", cetStart: 16, cetEnd: 19, y: 2025, mo: 11, d: 3  },
+    { wd: "MON", date: "Nov 9",  key: "20251109", cetStart: 14, cetEnd: 19, y: 2025, mo: 11, d: 9  },
+    { wd: "TUE", date: "Nov 10", key: "20251110", cetStart: 14, cetEnd: 19, y: 2025, mo: 11, d: 10 },
+    { wd: "THU", date: "Nov 12", key: "20251112", cetStart: 14, cetEnd: 19, y: 2025, mo: 11, d: 12 },
+    { wd: "MON", date: "Nov 16", key: "20251116", cetStart: 14, cetEnd: 19, y: 2025, mo: 11, d: 16 },
+    { wd: "TUE", date: "Nov 17", key: "20251117", cetStart: 14, cetEnd: 19, y: 2025, mo: 11, d: 17 },
 ];
 
-const GLOBAL_START = 14;   // earliest row on the grid
-const GLOBAL_END   = 19;   // exclusive — last slot at 18:45
-const SLOT_MIN     = 15;   // minutes per cell
-const MIN_CONT     = 8;    // 8 × 15 min = 2 hours continuous minimum
+// Global CET range → convert to UTC for internal storage
+const GLOBAL_CET_START = 14;
+const GLOBAL_CET_END   = 19;
+const GLOBAL_UTC_START = GLOBAL_CET_START - CET_OFFSET; // 13:00 UTC
+const GLOBAL_UTC_END   = GLOBAL_CET_END   - CET_OFFSET; // 18:00 UTC
+const SLOT_MIN = 15;
+const MIN_CONT = 8;   // 8 × 15min = 2 hours
 
 /* ================================================================
-   INTERNALS — no need to edit below
+   INTERNALS
    ================================================================ */
 
-// Detect unconfigured state
 if (FIREBASE_CONFIG.apiKey === "YOUR_API_KEY") {
     document.getElementById('err-screen').style.display = 'flex';
     document.getElementById('name-screen').style.display = 'none';
-    throw new Error("Firebase not configured — see setup instructions in index.html");
+    throw new Error("Firebase not configured");
 }
 
 firebase.initializeApp(FIREBASE_CONFIG);
 const db = firebase.database();
 
-// Persistent anonymous user ID
 let myUid = localStorage.getItem('thesis_uid');
 if (!myUid) {
     myUid = 'u' + Date.now() + Math.random().toString(36).slice(2, 8);
     localStorage.setItem('thesis_uid', myUid);
 }
 
-/* -- time slot helpers -- */
+/* -- Slot helpers --
+   Slots are stored as UTC times: key = "YYYYMMDD_HHMM" where HHMM is UTC.
+   e.g. "20251102_1300" = Nov 2 13:00 UTC = Nov 2 14:00 CET */
 function makeSlots() {
     const s = [];
-    for (let h = GLOBAL_START; h < GLOBAL_END; h++)
+    for (let h = GLOBAL_UTC_START; h < GLOBAL_UTC_END; h++)
         for (let m = 0; m < 60; m += SLOT_MIN)
             s.push(`${String(h).padStart(2,'0')}${String(m).padStart(2,'0')}`);
     return s;
 }
-const TIME_SLOTS = makeSlots();                        // ["1400","1415",…]
+const TIME_SLOTS = makeSlots(); // ["1300","1315",…,"1745"]
 const sKey = (dayKey, t) => `${dayKey}_${t}`;
-const fmt  = t => `${t.slice(0,2)}:${t.slice(2)}`;
 
-/* -- heat colour: white → dark green -- */
+/* Convert a UTC hour+minute on a specific date to the user's local time string */
+function toLocal(utcH, utcM, y, mo, d) {
+    return new Date(Date.UTC(y, mo - 1, d, utcH, utcM))
+        .toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+}
+
+/* For the time-label column, use Nov 2 as reference (all dates share the same UTC offset) */
+function slotLabel(utcTimeStr) {
+    return toLocal(parseInt(utcTimeStr.slice(0,2)), parseInt(utcTimeStr.slice(2)), 2025, 11, 2);
+}
+
+/* Is a UTC slot disabled for a given day? (before that day's CET start time) */
+function isDisabled(day, utcTimeStr) {
+    const utcH = parseInt(utcTimeStr.slice(0,2));
+    const utcM = parseInt(utcTimeStr.slice(2));
+    const utcStart = day.cetStart - CET_OFFSET;
+    return utcH < utcStart || (utcH === utcStart && utcM < 0);
+}
+
+/* Heat colour: white → dark green */
 function heatColor(ratio) {
     if (ratio <= 0) return '#ffffff';
-    // #ffffff → #15803d (green-700)
     const r = Math.round(255 - ratio * 234);
     const g = Math.round(255 - ratio * 127);
     const b = Math.round(255 - ratio * 194);
@@ -522,6 +528,15 @@ function initGrid() {
     document.getElementById('name-screen').style.display = 'none';
     document.getElementById('grid-screen').style.display = 'block';
     document.getElementById('display-name').textContent = myName;
+
+    // Show user's timezone
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const offsetMin = -new Date().getTimezoneOffset();
+    const offsetH   = Math.floor(Math.abs(offsetMin) / 60);
+    const offsetM   = Math.abs(offsetMin) % 60;
+    const offsetStr = `UTC${offsetMin >= 0 ? '+' : '-'}${String(offsetH).padStart(2,'0')}${offsetM ? ':' + String(offsetM).padStart(2,'0') : ''}`;
+    document.getElementById('tz-label').textContent = `${tz}, ${offsetStr}`;
+
     buildGrid();
     subscribeFirebase();
 }
@@ -532,7 +547,7 @@ function buildGrid() {
     TIME_SLOTS.forEach((t, i) => {
         const d = document.createElement('div');
         d.className = 'time-lbl';
-        if (i % 4 === 0) d.textContent = fmt(t);
+        if (i % 4 === 0) d.textContent = slotLabel(t);
         timeCol.appendChild(d);
     });
 
@@ -542,7 +557,7 @@ function buildGrid() {
         const col = document.createElement('div');
         col.className = 'day-col';
 
-        /* header */
+        /* header — date shown is always the CET date */
         const hdr = document.createElement('div');
         hdr.className = 'day-hdr';
         hdr.innerHTML = `<span class="wd">${day.wd}</span><span class="dt">${day.date}</span>`;
@@ -550,7 +565,7 @@ function buildGrid() {
 
         /* slots */
         TIME_SLOTS.forEach((t, i) => {
-            const disabled = parseInt(t.slice(0,2)) < day.start;
+            const disabled = isDisabled(day, t);
             const el = document.createElement('div');
             el.className = 'slot'
                 + (disabled ? ' off' : '')
@@ -560,7 +575,6 @@ function buildGrid() {
             el.dataset.t   = t;
 
             if (!disabled) {
-                /* mouse events */
                 el.addEventListener('mousedown', e => {
                     e.preventDefault();
                     dragging = true;
@@ -570,7 +584,6 @@ function buildGrid() {
                 el.addEventListener('mouseover', () => {
                     if (dragging) toggle(el.dataset.key, dragOn);
                 });
-                /* touch events */
                 el.addEventListener('touchstart', e => {
                     e.preventDefault();
                     dragging = true;
@@ -586,10 +599,8 @@ function buildGrid() {
                 }, { passive: false });
             }
 
-            /* tooltip */
             el.addEventListener('mouseenter', showTip);
             el.addEventListener('mouseleave', hideTip);
-
             col.appendChild(el);
         });
         daysRow.appendChild(col);
@@ -609,18 +620,12 @@ function toggle(key, on) {
 function paintSlot(key) {
     const el = document.querySelector(`.slot[data-key="${key}"]`);
     if (!el || el.classList.contains('off')) return;
-
     const mine  = mySlots.has(key);
     const total = Object.keys(allData).length;
     const count = Object.values(allData).filter(r => r.slots?.[key]).length;
-
-    if (mine) {
-        el.style.background = '#3b82f6';
-    } else if (count > 0) {
-        el.style.background = heatColor(count / Math.max(total, 1));
-    } else {
-        el.style.background = 'white';
-    }
+    if (mine)        el.style.background = '#3b82f6';
+    else if (count)  el.style.background = heatColor(count / Math.max(total, 1));
+    else             el.style.background = 'white';
 }
 
 function paintAll() {
@@ -634,17 +639,24 @@ let tipMover = null;
 function showTip(e) {
     const el  = e.currentTarget;
     if (el.classList.contains('off')) return;
-    const key = el.dataset.key;
-    const day = SCHEDULE.find(d => d.key === el.dataset.day);
-    const t   = el.dataset.t;
+    const key    = el.dataset.key;
+    const utcStr = el.dataset.t;
+    const dayKey = el.dataset.day;
+    const day    = SCHEDULE.find(d => d.key === dayKey);
+
+    const localT = toLocal(parseInt(utcStr.slice(0,2)), parseInt(utcStr.slice(2)), day.y, day.mo, day.d);
+    const cetT   = toLocal(parseInt(utcStr.slice(0,2)) + CET_OFFSET, parseInt(utcStr.slice(2)), day.y, day.mo, day.d);
+
     const total = Object.keys(allData).length;
     const names = Object.values(allData).filter(r => r.slots?.[key]).map(r => r.name);
 
-    tipEl.innerHTML = `<strong>${day.wd} ${day.date} · ${fmt(t)}</strong>` + (
-        total === 0
+    tipEl.innerHTML =
+        `<strong>${day.wd} ${day.date} · ${localT}</strong>` +
+        `<div class="cet-note">${cetT} CET (Zurich)</div>` +
+        (total === 0
             ? '<br>No responses yet'
             : `<br>${names.length} / ${total} available${names.length ? ':<br>' + names.join(', ') : ''}`
-    );
+        );
     tipEl.style.display = 'block';
     placeTip(e);
     tipMover = ev => placeTip(ev);
@@ -668,8 +680,9 @@ function hideTip() {
 function validate() {
     let valid = false;
     SCHEDULE.forEach(day => {
+        const utcStart = day.cetStart - CET_OFFSET;
         const daySlots = TIME_SLOTS
-            .filter(t => parseInt(t.slice(0,2)) >= day.start)
+            .filter(t => parseInt(t.slice(0,2)) >= utcStart)
             .map(t => sKey(day.key, t));
         let run = 0;
         daySlots.forEach(k => {
@@ -698,16 +711,10 @@ document.getElementById('submit-btn').addEventListener('click', async () => {
     const btn = document.getElementById('submit-btn');
     btn.disabled = true;
     btn.textContent = 'Saving…';
-
     const slotsObj = {};
     mySlots.forEach(k => { slotsObj[k] = true; });
-
     try {
-        await db.ref(`responses/${myUid}`).set({
-            name:  myName,
-            slots: slotsObj,
-            ts:    Date.now()
-        });
+        await db.ref(`responses/${myUid}`).set({ name: myName, slots: slotsObj, ts: Date.now() });
         showToast('✓ Availability saved!');
         btn.textContent = 'Update availability';
         validate();
@@ -731,13 +738,10 @@ function showToast(msg) {
 function subscribeFirebase() {
     db.ref('responses').on('value', snap => {
         allData = snap.val() || {};
-
-        /* restore my previous submission (if returning to page) */
         if (allData[myUid]?.slots) {
             mySlots = new Set(Object.keys(allData[myUid].slots));
             document.getElementById('submit-btn').textContent = 'Update availability';
         }
-
         paintAll();
         validate();
         renderRespondents();
@@ -750,12 +754,10 @@ function renderRespondents() {
     document.getElementById('resp-count').textContent = entries.length;
     const chips = document.getElementById('resp-chips');
     chips.innerHTML = '';
-
     if (entries.length === 0) {
         chips.innerHTML = '<span style="font-size:0.8rem;color:var(--gray-400)">No responses yet — be the first!</span>';
         return;
     }
-
     entries.forEach(([uid, r]) => {
         const chip = document.createElement('div');
         chip.className = 'chip' + (uid === myUid ? ' me' : '');
